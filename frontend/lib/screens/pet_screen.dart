@@ -1,5 +1,48 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'pet_skin_screen.dart';
+
+// ─── Modelo de Status do Pet ──────────────────────────────────────────────────
+
+class PetStatus {
+  double hunger;    // 0–100 (100 = cheio)
+  double happiness; // 0–100
+  double energy;    // 0–100
+
+  PetStatus({
+    this.hunger = 80,
+    this.happiness = 80,
+    this.energy = 80,
+  });
+
+  // Humor geral do pet (usado para mudar expressão)
+  String get mood {
+    final avg = (hunger + happiness + energy) / 3;
+    if (avg >= 70) return 'happy';
+    if (avg >= 40) return 'neutral';
+    return 'sad';
+  }
+
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('pet_hunger', hunger);
+    await prefs.setDouble('pet_happiness', happiness);
+    await prefs.setDouble('pet_energy', energy);
+  }
+
+  static Future<PetStatus> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    return PetStatus(
+      hunger: prefs.getDouble('pet_hunger') ?? 80,
+      happiness: prefs.getDouble('pet_happiness') ?? 80,
+      energy: prefs.getDouble('pet_energy') ?? 80,
+    );
+  }
+}
+
+// ─── Tela Principal ───────────────────────────────────────────────────────────
 
 class PetScreen extends StatefulWidget {
   const PetScreen({super.key});
@@ -8,8 +51,7 @@ class PetScreen extends StatefulWidget {
   State<PetScreen> createState() => _PetScreenState();
 }
 
-class _PetScreenState extends State<PetScreen>
-    with TickerProviderStateMixin {
+class _PetScreenState extends State<PetScreen> with TickerProviderStateMixin {
   static const Color kYellow = Color(0xFFF5B800);
   static const Color kDark = Color(0xFF1C1C1C);
   static const Color kBgTop = Color(0xFFF5F0A0);
@@ -18,14 +60,18 @@ class _PetScreenState extends State<PetScreen>
   late AnimationController _floatController;
   late Animation<double> _floatAnimation;
   late AnimationController _fireworkController;
+  late AnimationController _shakeController;
+  late Animation<double> _shakeAnimation;
 
   bool _showFireworks = false;
-  String _currentSkin = 'default'; // skin selecionada
-  String _currentRace = 'cat';     // raça selecionada
+  String _currentSkin = 'default';
+  String _currentRace = 'cat';
+  String? _hat;
+  String? _glasses;
 
-  // Acessórios selecionados
-  String? _hat;    // chapeu, noel, bucket, mafioso, cartola
-  String? _glasses; // oculos, de_grau, aviador
+  late PetStatus _status;
+  bool _isLoading = true;
+  Timer? _decayTimer;
 
   @override
   void initState() {
@@ -44,35 +90,154 @@ class _PetScreenState extends State<PetScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _shakeAnimation = Tween<double>(begin: -6, end: 6).animate(
+      CurvedAnimation(parent: _shakeController, curve: Curves.elasticIn),
+    );
+
+    _loadData();
+    _startDecayTimer();
+  }
+
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final status = await PetStatus.load();
+    setState(() {
+      _status = status;
+      _currentRace = prefs.getString('pet_race') ?? 'cat';
+      _hat = prefs.getString('pet_hat');
+      _glasses = prefs.getString('pet_glasses');
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pet_race', _currentRace);
+    await prefs.setString('pet_hat', _hat ?? '');
+    await prefs.setString('pet_glasses', _glasses ?? '');
+    await _status.save();
+  }
+
+  /// Decai os status do pet a cada 30 segundos (simula necessidades)
+  void _startDecayTimer() {
+    _decayTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      setState(() {
+        _status.hunger = (_status.hunger - 3).clamp(0, 100);
+        _status.happiness = (_status.happiness - 2).clamp(0, 100);
+        _status.energy = (_status.energy - 1.5).clamp(0, 100);
+      });
+      _status.save();
+    });
   }
 
   @override
   void dispose() {
     _floatController.dispose();
     _fireworkController.dispose();
+    _shakeController.dispose();
+    _decayTimer?.cancel();
     super.dispose();
   }
 
-  void _onStart() {
+  void _onStart() async {
+    if (_status.energy < 10) {
+      // Pet cansado demais para jogar
+      _shakeController.forward(from: 0);
+      _showSnack('Seu pet está cansado! Deixe ele descansar. 😴');
+      return;
+    }
+
+    final result = await Navigator.push<Map<String, double>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PetGameScreen(race: _currentRace, hat: _hat, glasses: _glasses),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _status.happiness = (_status.happiness + result['happiness']!).clamp(0, 100);
+        _status.energy = (_status.energy - result['energyCost']!).clamp(0, 100);
+        _status.hunger = (_status.hunger - result['hungerCost']!).clamp(0, 100);
+      });
+      await _saveAll();
+
+      _showFireworks();
+      _showSnack('Seu pet ficou mais feliz! 🎉');
+    }
+  }
+
+  void _showFireworks() {
     setState(() => _showFireworks = true);
     _fireworkController.forward(from: 0).then((_) {
       if (mounted) setState(() => _showFireworks = false);
     });
   }
 
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: kDark,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Alimentar o pet
+  void _feedPet() {
+    if (_status.hunger >= 100) {
+      _showSnack('Seu pet já está cheio! 🍽️');
+      return;
+    }
+    setState(() {
+      _status.hunger = (_status.hunger + 20).clamp(0, 100);
+      _status.happiness = (_status.happiness + 5).clamp(0, 100);
+    });
+    _saveAll();
+    _showSnack('Nhom nhom! Seu pet comeu! 🍖');
+  }
+
+  /// Descansar o pet
+  void _restPet() {
+    if (_status.energy >= 100) {
+      _showSnack('Seu pet está cheio de energia! ⚡');
+      return;
+    }
+    setState(() {
+      _status.energy = (_status.energy + 25).clamp(0, 100);
+    });
+    _saveAll();
+    _showSnack('Zzz... Seu pet descansou! 💤');
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: kBgTop,
+        body: Center(child: CircularProgressIndicator(color: kYellow)),
+      );
+    }
+
     return Scaffold(
       body: Column(
         children: [
-          // ── AppBar ──────────────────────────────────────────────────
+          // ── AppBar ───────────────────────────────────────────────────
           Container(
             color: kYellow,
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -85,32 +250,13 @@ class _PetScreenState extends State<PetScreen>
                           color: Colors.white24,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.reply_rounded,
-                            color: Colors.white, size: 22),
+                        child: const Icon(Icons.reply_rounded, color: Colors.white, size: 22),
                       ),
                     ),
-                    _SlowDownLogo(size: 28),
+                    const _SlowDownLogo(size: 28),
                     GestureDetector(
-                      onTap: () async {
-                        final result = await Navigator.push<Map<String, String?>>(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => PetSkinScreen(
-                                    currentHat: _hat,
-                                    currentGlasses: _glasses,
-                                    currentRace: _currentRace,
-                                  )),
-                        );
-                        if (result != null && mounted) {
-                          setState(() {
-                            _hat = result['hat'];
-                            _glasses = result['glasses'];
-                            _currentRace = result['race'] ?? 'cat';
-                          });
-                        }
-                      },
-                      child: const Icon(Icons.style_rounded,
-                          color: Colors.white, size: 28),
+                      onTap: _openSkins,
+                      child: const Icon(Icons.style_rounded, color: Colors.white, size: 28),
                     ),
                   ],
                 ),
@@ -130,27 +276,22 @@ class _PetScreenState extends State<PetScreen>
               ),
               child: Stack(
                 children: [
-                  // Fundo gramado
+                  // Grama
                   Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
+                    bottom: 0, left: 0, right: 0,
                     child: Container(
                       height: 120,
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFB8E88A),
-                            Color(0xFF8BC34A),
-                          ],
+                          colors: [Color(0xFFB8E88A), Color(0xFF8BC34A)],
                         ),
                       ),
                     ),
                   ),
 
-                  // Fogos de artifício
+                  // Fogos
                   if (_showFireworks)
                     AnimatedBuilder(
                       animation: _fireworkController,
@@ -159,36 +300,45 @@ class _PetScreenState extends State<PetScreen>
                       ),
                     ),
 
-                  // Conteúdo principal
+                  // Conteúdo
                   Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // ── Barras de Status ─────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                        child: _StatusBars(status: _status),
+                      ),
+
                       const Spacer(),
 
                       // ── Pet animado ──────────────────────────────
                       AnimatedBuilder(
                         animation: _floatAnimation,
-                        builder: (_, child) => Transform.translate(
-                          offset: Offset(0, _floatAnimation.value),
-                          child: child,
+                        builder: (_, child) => AnimatedBuilder(
+                          animation: _shakeAnimation,
+                          builder: (_, __) => Transform.translate(
+                            offset: Offset(
+                              _shakeController.isAnimating ? _shakeAnimation.value : 0,
+                              _floatAnimation.value,
+                            ),
+                            child: child,
+                          ),
                         ),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            // Pet (raça)
                             CustomPaint(
                               size: const Size(200, 200),
-                              painter: _PetPainter(race: _currentRace),
+                              painter: _PetPainter(
+                                race: _currentRace,
+                                mood: _status.mood,
+                              ),
                             ),
-
-                            // Acessório: chapéu
                             if (_hat != null)
                               Positioned(
                                 top: 10,
                                 child: _HatWidget(hat: _hat!),
                               ),
-
-                            // Acessório: óculos
                             if (_glasses != null)
                               Positioned(
                                 top: 72,
@@ -198,7 +348,29 @@ class _PetScreenState extends State<PetScreen>
                         ),
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
+
+                      // ── Ações rápidas (alimentar / descansar) ────
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _ActionButton(
+                            icon: Icons.restaurant_rounded,
+                            label: 'Alimentar',
+                            color: const Color(0xFFFF7043),
+                            onTap: _feedPet,
+                          ),
+                          const SizedBox(width: 16),
+                          _ActionButton(
+                            icon: Icons.bedtime_rounded,
+                            label: 'Descansar',
+                            color: const Color(0xFF5C6BC0),
+                            onTap: _restPet,
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 16),
 
                       // ── Botão START ──────────────────────────────
                       GestureDetector(
@@ -209,6 +381,13 @@ class _PetScreenState extends State<PetScreen>
                           decoration: BoxDecoration(
                             color: kDark,
                             borderRadius: BorderRadius.circular(50),
+                            boxShadow: [
+                              BoxShadow(
+                                color: kDark.withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: const Center(
                             child: Text(
@@ -224,29 +403,11 @@ class _PetScreenState extends State<PetScreen>
                         ),
                       ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
 
                       // ── Botão Skins ──────────────────────────────
                       GestureDetector(
-                        onTap: () async {
-                          final result =
-                              await Navigator.push<Map<String, String?>>(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => PetSkinScreen(
-                                      currentHat: _hat,
-                                      currentGlasses: _glasses,
-                                      currentRace: _currentRace,
-                                    )),
-                          );
-                          if (result != null && mounted) {
-                            setState(() {
-                              _hat = result['hat'];
-                              _glasses = result['glasses'];
-                              _currentRace = result['race'] ?? 'cat';
-                            });
-                          }
-                        },
+                        onTap: _openSkins,
                         child: Container(
                           width: 140,
                           height: 44,
@@ -279,13 +440,553 @@ class _PetScreenState extends State<PetScreen>
       ),
     );
   }
+
+  Future<void> _openSkins() async {
+    final result = await Navigator.push<Map<String, String?>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PetSkinScreen(
+          currentHat: _hat,
+          currentGlasses: _glasses,
+          currentRace: _currentRace,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _hat = result['hat'];
+        _glasses = result['glasses'];
+        _currentRace = result['race'] ?? 'cat';
+      });
+      _saveAll();
+    }
+  }
+}
+
+// ─── Barras de Status ─────────────────────────────────────────────────────────
+
+class _StatusBars extends StatelessWidget {
+  final PetStatus status;
+  const _StatusBars({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _StatusBar(
+            icon: Icons.restaurant_rounded,
+            label: 'Fome',
+            value: status.hunger,
+            color: const Color(0xFFFF7043),
+          ),
+          const SizedBox(height: 8),
+          _StatusBar(
+            icon: Icons.favorite_rounded,
+            label: 'Felicidade',
+            value: status.happiness,
+            color: const Color(0xFFEC407A),
+          ),
+          const SizedBox(height: 8),
+          _StatusBar(
+            icon: Icons.bolt_rounded,
+            label: 'Energia',
+            value: status.energy,
+            color: const Color(0xFF42A5F5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBar extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final double value;
+  final Color color;
+
+  const _StatusBar({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 68,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1C1C1C),
+            ),
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: value / 100,
+              minHeight: 10,
+              backgroundColor: Colors.black12,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                value > 50 ? color : color.withOpacity(0.6),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 32,
+          child: Text(
+            '${value.toInt()}',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Botão de ação rápida ─────────────────────────────────────────────────────
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(50),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.35),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Minijogo: Pegue as Estrelas ──────────────────────────────────────────────
+
+class _PetGameScreen extends StatefulWidget {
+  final String race;
+  final String? hat;
+  final String? glasses;
+
+  const _PetGameScreen({required this.race, this.hat, this.glasses});
+
+  @override
+  State<_PetGameScreen> createState() => _PetGameScreenState();
+}
+
+class _PetGameScreenState extends State<_PetGameScreen>
+    with TickerProviderStateMixin {
+  static const Color kYellow = Color(0xFFF5B800);
+  static const Color kDark = Color(0xFF1C1C1C);
+
+  final Random _rng = Random();
+  final List<_Star> _stars = [];
+  int _score = 0;
+  int _timeLeft = 20;
+  Timer? _gameTimer;
+  Timer? _spawnTimer;
+  bool _gameOver = false;
+
+  late AnimationController _petController;
+  late Animation<double> _petFloat;
+  double _petX = 0.5; // posição horizontal do pet (0–1)
+
+  @override
+  void initState() {
+    super.initState();
+
+    _petController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _petFloat = Tween<double>(begin: -6, end: 6).animate(
+      CurvedAnimation(parent: _petController, curve: Curves.easeInOut),
+    );
+
+    _startGame();
+  }
+
+  void _startGame() {
+    // Timer principal (contagem regressiva)
+    _gameTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      setState(() => _timeLeft--);
+      if (_timeLeft <= 0) {
+        t.cancel();
+        _spawnTimer?.cancel();
+        setState(() => _gameOver = true);
+      }
+    });
+
+    // Spawn de estrelas
+    _spawnTimer = Timer.periodic(const Duration(milliseconds: 800), (_) {
+      if (!mounted || _gameOver) return;
+      setState(() {
+        _stars.add(_Star(
+          x: _rng.nextDouble() * 0.85 + 0.07,
+          y: 0,
+          speed: 0.008 + _rng.nextDouble() * 0.006,
+          color: [kYellow, Colors.pinkAccent, Colors.lightBlueAccent, Colors.greenAccent][_rng.nextInt(4)],
+        ));
+      });
+    });
+
+    // Loop de física (move as estrelas)
+    Timer.periodic(const Duration(milliseconds: 16), (t) {
+      if (!mounted) { t.cancel(); return; }
+      if (_gameOver) { t.cancel(); return; }
+      setState(() {
+        for (final star in _stars) {
+          star.y += star.speed;
+        }
+        // Verificar colisão com pet
+        _stars.removeWhere((star) {
+          final dist = (star.x - _petX).abs();
+          if (star.y > 0.72 && star.y < 0.88 && dist < 0.12) {
+            _score++;
+            return true;
+          }
+          return star.y > 1.1;
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _gameTimer?.cancel();
+    _spawnTimer?.cancel();
+    _petController.dispose();
+    super.dispose();
+  }
+
+  void _movePet(DragUpdateDetails d, BoxConstraints constraints) {
+    setState(() {
+      _petX = (_petX + d.delta.dx / constraints.maxWidth).clamp(0.08, 0.92);
+    });
+  }
+
+  void _finishGame() {
+    // Calcula recompensas baseadas no score
+    final happiness = (_score * 3.0).clamp(5.0, 40.0);
+    final energyCost = 15.0;
+    final hungerCost = 10.0;
+
+    Navigator.pop(context, {
+      'happiness': happiness,
+      'energyCost': energyCost,
+      'hungerCost': hungerCost,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A2E),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final h = constraints.maxHeight;
+
+            return Stack(
+              children: [
+                // ── Fundo estrelado ──────────────────────────────
+                ...List.generate(20, (i) => Positioned(
+                  left: (i * 47.3) % w,
+                  top: (i * 83.7) % (h * 0.7),
+                  child: Container(
+                    width: 2,
+                    height: 2,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3 + (i % 3) * 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                )),
+
+                // ── HUD (score + timer) ──────────────────────────
+                Positioned(
+                  top: 12,
+                  left: 16,
+                  right: 16,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Score
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: kYellow,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.star_rounded, color: Colors.white, size: 16),
+                            const SizedBox(width: 4),
+                            Text('$_score',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                )),
+                          ],
+                        ),
+                      ),
+                      // Timer
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _timeLeft <= 5 ? Colors.red : Colors.white24,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.timer_rounded, color: Colors.white, size: 16),
+                            const SizedBox(width: 4),
+                            Text('${_timeLeft}s',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                )),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ── Estrelas caindo ──────────────────────────────
+                for (final star in _stars)
+                  Positioned(
+                    left: star.x * w - 14,
+                    top: star.y * h - 14,
+                    child: Icon(
+                      Icons.star_rounded,
+                      color: star.color,
+                      size: 28,
+                    ),
+                  ),
+
+                // ── Pet controlável ──────────────────────────────
+                GestureDetector(
+                  onHorizontalDragUpdate: (d) => _movePet(d, constraints),
+                  onPanUpdate: (d) => _movePet(d, constraints),
+                  child: Container(
+                    color: Colors.transparent,
+                    width: w,
+                    height: h,
+                    child: AnimatedBuilder(
+                      animation: _petFloat,
+                      builder: (_, child) => Stack(
+                        children: [
+                          Positioned(
+                            left: _petX * w - 55,
+                            top: h * 0.73 + _petFloat.value,
+                            child: child!,
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CustomPaint(
+                            size: const Size(110, 110),
+                            painter: _PetPainter(race: widget.race, mood: 'happy'),
+                          ),
+                          if (widget.hat != null)
+                            Positioned(top: 5, child: _HatWidget(hat: widget.hat!)),
+                          if (widget.glasses != null)
+                            Positioned(top: 38, child: _GlassesWidget(glasses: widget.glasses!)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Instrução de arraste
+                Positioned(
+                  bottom: 16,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text(
+                      'Arraste para mover o pet! ← →',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // ── Game Over ────────────────────────────────────
+                if (_gameOver)
+                  Container(
+                    color: Colors.black87,
+                    child: Center(
+                      child: Container(
+                        margin: const EdgeInsets.all(32),
+                        padding: const EdgeInsets.all(28),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1C1C1C),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: kYellow, width: 2),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('⭐ FIM DE JOGO!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                )),
+                            const SizedBox(height: 12),
+                            Text('Você pegou $_score estrelas!',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                )),
+                            const SizedBox(height: 8),
+                            Text(
+                              _score >= 10
+                                  ? 'Incrível! Seu pet adorou! 🥳'
+                                  : _score >= 5
+                                      ? 'Bom jogo! Seu pet ficou feliz! 😄'
+                                      : 'Continue tentando! Seu pet ainda te ama 💛',
+                              style: const TextStyle(color: Colors.white60, fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '+${(_score * 3).clamp(5, 40)} Felicidade',
+                              style: const TextStyle(
+                                color: Color(0xFFEC407A),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            GestureDetector(
+                              onTap: _finishGame,
+                              child: Container(
+                                width: double.infinity,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: kYellow,
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                                child: const Center(
+                                  child: Text('VOLTAR',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                        letterSpacing: 2,
+                                      )),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Modelo de estrela ────────────────────────────────────────────────────────
+
+class _Star {
+  double x;
+  double y;
+  final double speed;
+  final Color color;
+
+  _Star({required this.x, required this.y, required this.speed, required this.color});
 }
 
 // ─── Painter: Pet ─────────────────────────────────────────────────────────────
 
 class _PetPainter extends CustomPainter {
   final String race;
-  const _PetPainter({required this.race});
+  final String mood; // 'happy', 'neutral', 'sad'
+
+  const _PetPainter({required this.race, this.mood = 'happy'});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -330,7 +1031,6 @@ class _PetPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     if (race == 'robot') {
-      // Corpo robô quadrado
       final body = RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(w * 0.5, h * 0.65), width: w * 0.55, height: h * 0.45),
         const Radius.circular(10),
@@ -345,17 +1045,23 @@ class _PetPainter extends CustomPainter {
       canvas.drawRRect(head, bodyPaint);
       canvas.drawRRect(head, outlinePaint);
 
-      // Olhos LED
+      // Olhos LED — cor muda com humor
+      final ledColor = mood == 'happy'
+          ? const Color(0xFF00E5FF)
+          : mood == 'sad'
+              ? const Color(0xFFFF5252)
+              : const Color(0xFFFFFF00);
+
       canvas.drawRect(
         Rect.fromCenter(center: Offset(w * 0.38, h * 0.31), width: w * 0.10, height: h * 0.08),
-        Paint()..color = const Color(0xFF00E5FF)..style = PaintingStyle.fill,
+        Paint()..color = ledColor..style = PaintingStyle.fill,
       );
       canvas.drawRect(
         Rect.fromCenter(center: Offset(w * 0.62, h * 0.31), width: w * 0.10, height: h * 0.08),
-        Paint()..color = const Color(0xFF00E5FF)..style = PaintingStyle.fill,
+        Paint()..color = ledColor..style = PaintingStyle.fill,
       );
     } else {
-      // Corpo padrão (gato/cachorro/monge/aviador)
+      // Corpo padrão
       final bodyPath = Path()
         ..addOval(Rect.fromCenter(
           center: Offset(w * 0.5, h * 0.65),
@@ -375,7 +1081,6 @@ class _PetPainter extends CustomPainter {
       canvas.drawPath(headPath, outlinePaint);
 
       if (race == 'dog') {
-        // Orelhas caídas
         final leftEar = Path()
           ..moveTo(w * 0.22, h * 0.18)
           ..cubicTo(w * 0.08, h * 0.22, w * 0.10, h * 0.40, w * 0.22, h * 0.44)
@@ -392,7 +1097,6 @@ class _PetPainter extends CustomPainter {
         canvas.drawPath(rightEar, bodyPaint);
         canvas.drawPath(rightEar, outlinePaint);
       } else {
-        // Orelhas pontudas (gato / monge / aviador)
         final leftEar = Path()
           ..moveTo(w * 0.24, h * 0.22)
           ..lineTo(w * 0.16, h * 0.06)
@@ -431,16 +1135,42 @@ class _PetPainter extends CustomPainter {
         ..close();
       canvas.drawPath(nosePath, darkFill);
 
-      // Boca
+      // Boca — muda com o humor
       final mouthPaint = Paint()
         ..color = const Color(0xFF1C1C1C)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5
         ..strokeCap = StrokeCap.round;
-      canvas.drawLine(Offset(w * 0.5, h * 0.44), Offset(w * 0.44, h * 0.49), mouthPaint);
-      canvas.drawLine(Offset(w * 0.5, h * 0.44), Offset(w * 0.56, h * 0.49), mouthPaint);
 
-      // Bigodes (só gato)
+      if (mood == 'happy') {
+        // Sorriso
+        canvas.drawLine(Offset(w * 0.5, h * 0.44), Offset(w * 0.44, h * 0.49), mouthPaint);
+        canvas.drawLine(Offset(w * 0.5, h * 0.44), Offset(w * 0.56, h * 0.49), mouthPaint);
+      } else if (mood == 'neutral') {
+        // Linha reta
+        canvas.drawLine(Offset(w * 0.43, h * 0.47), Offset(w * 0.57, h * 0.47), mouthPaint);
+      } else {
+        // Tristeza
+        canvas.drawLine(Offset(w * 0.44, h * 0.49), Offset(w * 0.5, h * 0.45), mouthPaint);
+        canvas.drawLine(Offset(w * 0.56, h * 0.49), Offset(w * 0.5, h * 0.45), mouthPaint);
+      }
+
+      // Lágrimas se triste
+      if (mood == 'sad') {
+        final tearPaint = Paint()
+          ..color = Colors.lightBlueAccent.withOpacity(0.8)
+          ..style = PaintingStyle.fill;
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset(w * 0.38, h * 0.42), width: w * 0.04, height: h * 0.05),
+          tearPaint,
+        );
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset(w * 0.62, h * 0.42), width: w * 0.04, height: h * 0.05),
+          tearPaint,
+        );
+      }
+
+      // Bigodes
       if (race != 'dog') {
         final whiskerPaint = Paint()
           ..color = const Color(0xFF1C1C1C)
@@ -489,7 +1219,8 @@ class _PetPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PetPainter old) => old.race != race;
+  bool shouldRepaint(covariant _PetPainter old) =>
+      old.race != race || old.mood != mood;
 }
 
 // ─── Widget: Chapéu ───────────────────────────────────────────────────────────
@@ -583,7 +1314,7 @@ class _GlassesWidget extends StatelessWidget {
   }
 }
 
-// ─── Widget: Fogos de artifício ───────────────────────────────────────────────
+// ─── Fogos de artifício ───────────────────────────────────────────────────────
 
 class _FireworksOverlay extends StatelessWidget {
   final double progress;
@@ -633,10 +1364,10 @@ class _FireworksPainter extends CustomPainter {
       final maxR = size.width * 0.15;
 
       for (int i = 0; i < 12; i++) {
-        final angle = (i / 12) * 2 * 3.14159;
+        final angle = (i / 12) * 2 * pi;
         final r = maxR * localProgress;
-        final x = cx + r * (r < maxR ? 1.0 : 0.0) * _cos(angle);
-        final y = cy + r * _sin(angle);
+        final x = cx + r * cos(angle);
+        final y = cy + r * sin(angle);
         final opacity = (1 - localProgress).clamp(0.0, 1.0);
 
         canvas.drawCircle(
@@ -648,20 +1379,11 @@ class _FireworksPainter extends CustomPainter {
     }
   }
 
-  double _cos(double angle) {
-    // Aproximação simples
-    return (angle < 3.14159) ? (1 - angle / 1.5708).clamp(-1, 1) : ((angle - 3.14159) / 1.5708 - 1).clamp(-1, 1);
-  }
-
-  double _sin(double angle) {
-    return _cos(angle - 1.5708);
-  }
-
   @override
   bool shouldRepaint(covariant _FireworksPainter old) => old.progress != progress;
 }
 
-// ─── Widget: Logo SlowDown ────────────────────────────────────────────────────
+// ─── Logo ─────────────────────────────────────────────────────────────────────
 
 class _SlowDownLogo extends StatelessWidget {
   final double size;
@@ -673,25 +1395,27 @@ class _SlowDownLogo extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: EdgeInsets.symmetric(
-              horizontal: size * 0.14, vertical: size * 0.08),
+          padding: EdgeInsets.symmetric(horizontal: size * 0.14, vertical: size * 0.08),
           decoration: BoxDecoration(
-              color: const Color(0xFF1C1C1C),
-              borderRadius: BorderRadius.circular(4)),
+            color: const Color(0xFF1C1C1C),
+            borderRadius: BorderRadius.circular(4),
+          ),
           child: Text('SLOW',
               style: TextStyle(
-                  color: const Color(0xFFF5B800),
-                  fontSize: size * 0.45,
-                  fontWeight: FontWeight.w900,
-                  height: 1)),
+                color: const Color(0xFFF5B800),
+                fontSize: size * 0.45,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              )),
         ),
         SizedBox(width: size * 0.08),
         Text('DOWN',
             style: TextStyle(
-                color: const Color(0xFF1C1C1C),
-                fontSize: size * 0.72,
-                fontWeight: FontWeight.w900,
-                height: 1)),
+              color: const Color(0xFF1C1C1C),
+              fontSize: size * 0.72,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            )),
       ],
     );
   }
