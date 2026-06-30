@@ -63,7 +63,7 @@ class _PetScreenState extends State<PetScreen> with TickerProviderStateMixin {
   late AnimationController _shakeController;
   late Animation<double> _shakeAnimation;
 
-  bool _showFireworks = false;
+  bool _isShowingFireworks = false;
   String _currentSkin = 'default';
   String _currentRace = 'cat';
   String? _hat;
