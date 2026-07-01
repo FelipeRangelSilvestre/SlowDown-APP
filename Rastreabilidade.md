@@ -4,11 +4,7 @@
 
 Este documento tem como objetivo apresentar a rastreabilidade das telas do sistema em relação às **Histórias de Usuário (US)** do projeto.
 
-Neste documento está registrada cada História de Usuário, bem como as telas relacionadas encontradas no diretório:
-
-```text
-frontend/lib/screens/
-```
+Neste documento está registrada cada História de Usuário, bem como as telas relacionadas encontradas no diretório **[frontend/lib/screens](https://github.com/FelipeRangelSilvestre/SlowDown-APP/tree/main/frontend/lib/screens)**.
 
 Foram listadas apenas as Histórias de Usuário que possuem telas identificadas no código-fonte.
 
