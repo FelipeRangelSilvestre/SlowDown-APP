@@ -46,14 +46,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return null;
   }
 
+  String? _validateLoginForm() {
+    return _validateEmail() ?? _validatePassword();
+  }
+
   Future<void> _handleLogin() async {
-    final emailErr = _validateEmail();
-    final passErr = _validatePassword();
+    final validationError = _validateLoginForm();
 
-    final firstError = emailErr ?? passErr;
-
-    if (firstError != null) {
-      _showSnackBar(firstError, isError: true);
+    if (validationError != null) {
+      _showFeedback(validationError, isError: true);
       return;
     }
 
@@ -64,19 +65,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       );
 
       if (!mounted) return;
-      _showSnackBar('Login realizado com sucesso!');
-      
+      _showFeedback('Login realizado com sucesso!');
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar(e.toString(), isError: true);
+      _showFeedback(e.toString(), isError: true);
     }
   }
 
-  void _showSnackBar(String message, {bool isError = false}) {
+  void _showFeedback(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(color: Colors.white)),
@@ -147,22 +148,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _InputField(
-                              controller: _emailController,
-                              hintText: 'Email',
-                              prefixIcon: Icons.person_outline_rounded,
-                              keyboardType: TextInputType.emailAddress,
-                            ),
+                            _EmailInputField(controller: _emailController),
                             const SizedBox(height: 14),
-                            _InputField(
+                            _PasswordInputField(
                               controller: _passwordController,
-                              hintText: 'Senha',
-                              prefixIcon: Icons.lock_outline_rounded,
                               obscureText: _obscurePassword,
-                              suffixIcon: _obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              onSuffixTap: () => setState(() => _obscurePassword = !_obscurePassword),
+                              onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                             ),
                             const SizedBox(height: 16),
                             Row(
@@ -342,6 +333,46 @@ class _InputField extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         ),
       ),
+    );
+  }
+}
+
+class _EmailInputField extends StatelessWidget {
+  final TextEditingController controller;
+
+  const _EmailInputField({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Email',
+      prefixIcon: Icons.person_outline_rounded,
+      keyboardType: TextInputType.emailAddress,
+    );
+  }
+}
+
+class _PasswordInputField extends StatelessWidget {
+  final TextEditingController controller;
+  final bool obscureText;
+  final VoidCallback? onToggleVisibility;
+
+  const _PasswordInputField({
+    required this.controller,
+    required this.obscureText,
+    this.onToggleVisibility,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Senha',
+      prefixIcon: Icons.lock_outline_rounded,
+      obscureText: obscureText,
+      suffixIcon: obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+      onSuffixTap: onToggleVisibility,
     );
   }
 }

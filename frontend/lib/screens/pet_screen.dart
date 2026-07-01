@@ -174,9 +174,9 @@ class _PetScreenState extends State<PetScreen> with TickerProviderStateMixin {
   }
 
   void _showFireworks() {
-    setState(() => _showFireworks = true);
+    setState(() => _isShowingFireworks = true);
     _fireworkController.forward(from: 0).then((_) {
-      if (mounted) setState(() => _showFireworks = false);
+      if (mounted) setState(() => _isShowingFireworks = false);
     });
   }
 
@@ -292,7 +292,7 @@ class _PetScreenState extends State<PetScreen> with TickerProviderStateMixin {
                   ),
 
                   // Fogos
-                  if (_showFireworks)
+                  if (_isShowingFireworks)
                     AnimatedBuilder(
                       animation: _fireworkController,
                       builder: (_, __) => _FireworksOverlay(

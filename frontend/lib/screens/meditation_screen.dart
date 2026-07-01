@@ -37,43 +37,122 @@ class MeditationScreen extends StatelessWidget {
     },
   ];
 
+  Widget _buildAppBar(BuildContext context) {
+    return Container(
+      color: kYellow,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).maybePop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.white24,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.reply_rounded,
+                      color: Colors.white, size: 22),
+                ),
+              ),
+              const _SlowDownLogo(size: 28),
+              const Icon(Icons.menu_rounded,
+                  color: Colors.white, size: 28),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+      child: Row(
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: kYellow.withOpacity(0.4),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.self_improvement_rounded,
+              size: 46,
+              color: Color(0xFF7C6FAA),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'MEDITAÇÃO',
+                style: TextStyle(
+                  color: kDark,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Text(
+                'Escolha sua sessão',
+                style: TextStyle(
+                  color: kDark.withOpacity(0.55),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionList(BuildContext context) {
+    return Expanded(
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _sessions.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, i) {
+          final s = _sessions[i];
+          return _SessionCard(
+            title: s['title'],
+            duration: s['duration'],
+            icon: s['icon'],
+            color: s['color'],
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MeditationSessionScreen(
+                  title: s['title'],
+                  duration: s['duration'],
+                  color: s['color'],
+                  icon: s['icon'],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Column(
         children: [
           // ── AppBar ──────────────────────────────────────────────────
-          Container(
-            color: kYellow,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).maybePop(),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: const BoxDecoration(
-                          color: Colors.white24,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.reply_rounded,
-                            color: Colors.white, size: 22),
-                      ),
-                    ),
-                    const _SlowDownLogo(size: 28),
-                    const Icon(Icons.menu_rounded,
-                        color: Colors.white, size: 28),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          _buildAppBar(context),
 
           // ── Corpo ────────────────────────────────────────────────────
           Expanded(
@@ -88,81 +167,10 @@ class MeditationScreen extends StatelessWidget {
               child: Column(
                 children: [
                   // Gatinho + título
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 20, horizontal: 24),
-                    child: Row(
-                      children: [
-                        // Gatinho meditando
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: kYellow.withOpacity(0.4),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.self_improvement_rounded,
-                            size: 46,
-                            color: Color(0xFF7C6FAA),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'MEDITAÇÃO',
-                              style: TextStyle(
-                                color: kDark,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            Text(
-                              'Escolha sua sessão',
-                              style: TextStyle(
-                                color: kDark.withOpacity(0.55),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  _buildHeader(),
 
                   // Lista de sessões
-                  Expanded(
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      itemCount: _sessions.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 12),
-                      itemBuilder: (context, i) {
-                        final s = _sessions[i];
-                        return _SessionCard(
-                          title: s['title'],
-                          duration: s['duration'],
-                          icon: s['icon'],
-                          color: s['color'],
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => MeditationSessionScreen(
-                                title: s['title'],
-                                duration: s['duration'],
-                                color: s['color'],
-                                icon: s['icon'],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                  _buildSessionList(context),
                   
                   // Um pequeno espaçamento no final para a lista não colar no rodapé da tela
                   const SizedBox(height: 24),
