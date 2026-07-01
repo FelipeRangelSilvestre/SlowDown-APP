@@ -3,6 +3,7 @@ const db = require('../config/database');
 const syncUser = async (req, res) => {
   try {
     const { uid, email } = req.user; // Dados extraídos e validados pelo middleware
+    
     const nome = req.body.nome || req.user.name || 'Usuário SlowDown';
 
     // 1. Verifica se o firebase_uid já está no MySQL

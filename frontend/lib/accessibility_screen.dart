@@ -44,8 +44,11 @@ class _AccessibilityScreenState extends State<AccessibilityScreen>
 
   void _toggleVoice(bool value) {
     setState(() => _voiceEnabled = value);
+    _updateVoiceAnimation(value);
+  }
 
-    if (value) {
+  void _updateVoiceAnimation(bool isEnabled) {
+    if (isEnabled) {
       _iconController.repeat(reverse: true);
     } else {
       _iconController.stop();
@@ -60,6 +63,54 @@ class _AccessibilityScreenState extends State<AccessibilityScreen>
         transitionsBuilder: (_, animation, __, child) =>
             FadeTransition(opacity: animation, child: child),
         transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
+  }
+
+  Widget _buildVoiceIcon() {
+    return ScaleTransition(
+      scale: _voiceEnabled ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
+      child: CustomPaint(
+        size: const Size(220, 220),
+        painter: _VoiceIconPainter(active: _voiceEnabled),
+      ),
+    );
+  }
+
+  Widget _buildVoiceToggle() {
+    return GestureDetector(
+      onTap: () => _toggleVoice(!_voiceEnabled),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        width: 100,
+        height: 52,
+        decoration: BoxDecoration(
+          color: kDark,
+          borderRadius: BorderRadius.circular(50),
+        ),
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              alignment: _voiceEnabled
+                  ? Alignment.centerRight
+                  : Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -127,53 +178,12 @@ class _AccessibilityScreenState extends State<AccessibilityScreen>
                   const Spacer(),
 
                   // Ícone de voz com pulso
-                  ScaleTransition(
-                    scale: _voiceEnabled ? _pulseAnimation : const AlwaysStoppedAnimation(1.0),
-                    child: CustomPaint(
-                      size: const Size(220, 220),
-                      painter: _VoiceIconPainter(active: _voiceEnabled),
-                    ),
-                  ),
+                  _buildVoiceIcon(),
 
                   const SizedBox(height: 48),
 
                   // Toggle
-                  GestureDetector(
-                    onTap: () => _toggleVoice(!_voiceEnabled),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      width: 100,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: kDark,
-                        borderRadius: BorderRadius.circular(50),
-                      ),
-                      child: Stack(
-                        children: [
-                          AnimatedAlign(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                            alignment: _voiceEnabled
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  _buildVoiceToggle(),
 
                   const Spacer(),
 

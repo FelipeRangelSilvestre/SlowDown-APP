@@ -66,16 +66,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return null;
   }
 
+  String? _validateRegisterForm() {
+    return _validateName() ?? _validateEmail() ?? _validatePassword() ?? _validateConfirm();
+  }
+
   Future<void> _handleRegister() async {
-    final nameErr = _validateName();
-    final emailErr = _validateEmail();
-    final passErr = _validatePassword();
-    final confirmErr = _validateConfirm();
+    final validationError = _validateRegisterForm();
 
-    final firstError = nameErr ?? emailErr ?? passErr ?? confirmErr;
-
-    if (firstError != null) {
-      _showSnackBar(firstError, isError: true);
+    if (validationError != null) {
+      _showSnackBar(validationError, isError: true);
       return;
     }
 
@@ -197,41 +196,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _InputField(
-                              controller: _nameController,
-                              hintText: 'Nome completo',
-                              prefixIcon: Icons.person_outline_rounded,
-                              keyboardType: TextInputType.name,
-                              textCapitalization: TextCapitalization.words,
-                            ),
+                            _NameInputField(controller: _nameController),
                             const SizedBox(height: 14),
-                            _InputField(
-                              controller: _emailController,
-                              hintText: 'Email',
-                              prefixIcon: Icons.email_outlined,
-                              keyboardType: TextInputType.emailAddress,
-                            ),
+                            _EmailInputField(controller: _emailController),
                             const SizedBox(height: 14),
-                            _InputField(
+                            _PasswordInputField(
                               controller: _passwordController,
-                              hintText: 'Senha',
-                              prefixIcon: Icons.lock_outline_rounded,
                               obscureText: _obscurePassword,
-                              suffixIcon: _obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              onSuffixTap: () => setState(() => _obscurePassword = !_obscurePassword),
+                              onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                             ),
                             const SizedBox(height: 14),
-                            _InputField(
+                            _ConfirmPasswordInputField(
                               controller: _confirmPasswordController,
-                              hintText: 'Confirmar senha',
-                              prefixIcon: Icons.lock_outline_rounded,
                               obscureText: _obscureConfirm,
-                              suffixIcon: _obscureConfirm
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined,
-                              onSuffixTap: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                              onToggleVisibility: () => setState(() => _obscureConfirm = !_obscureConfirm),
                             ),
                             const SizedBox(height: 16),
                             GestureDetector(
@@ -291,35 +269,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                               ),
                             ),
                             const SizedBox(height: 22),
-                            SizedBox(
-                              height: 52,
-                              child: ElevatedButton(
-                                onPressed: isLoading ? null : _handleRegister,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: kDark,
-                                  disabledBackgroundColor: Colors.white.withOpacity(0.5),
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(50),
-                                  ),
-                                ),
-                                child: isLoading
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(strokeWidth: 2.5, color: kDark),
-                                      )
-                                    : const Text(
-                                        'CRIAR CONTA',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 2.5,
-                                          color: kDark,
-                                        ),
-                                      ),
-                              ),
+                            _PrimaryActionButton(
+                              isLoading: isLoading,
+                              onPressed: _handleRegister,
+                              label: 'CRIAR CONTA',
                             ),
                             const SizedBox(height: 20),
                             Column(
@@ -356,6 +309,50 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PrimaryActionButton extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback? onPressed;
+  final String label;
+
+  const _PrimaryActionButton({
+    required this.isLoading,
+    required this.onPressed,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: const Color(0xFF1C1C1C),
+          disabledBackgroundColor: Colors.white.withOpacity(0.5),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF1C1C1C)),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2.5,
+                  color: Color(0xFF1C1C1C),
+                ),
+              ),
       ),
     );
   }
@@ -432,6 +429,87 @@ class _InputField extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         ),
       ),
+    );
+  }
+}
+
+class _NameInputField extends StatelessWidget {
+  final TextEditingController controller;
+
+  const _NameInputField({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Nome completo',
+      prefixIcon: Icons.person_outline_rounded,
+      keyboardType: TextInputType.name,
+      textCapitalization: TextCapitalization.words,
+    );
+  }
+}
+
+class _EmailInputField extends StatelessWidget {
+  final TextEditingController controller;
+
+  const _EmailInputField({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Email',
+      prefixIcon: Icons.email_outlined,
+      keyboardType: TextInputType.emailAddress,
+    );
+  }
+}
+
+class _PasswordInputField extends StatelessWidget {
+  final TextEditingController controller;
+  final bool obscureText;
+  final VoidCallback? onToggleVisibility;
+
+  const _PasswordInputField({
+    required this.controller,
+    required this.obscureText,
+    this.onToggleVisibility,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Senha',
+      prefixIcon: Icons.lock_outline_rounded,
+      obscureText: obscureText,
+      suffixIcon: obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+      onSuffixTap: onToggleVisibility,
+    );
+  }
+}
+
+class _ConfirmPasswordInputField extends StatelessWidget {
+  final TextEditingController controller;
+  final bool obscureText;
+  final VoidCallback? onToggleVisibility;
+
+  const _ConfirmPasswordInputField({
+    required this.controller,
+    required this.obscureText,
+    this.onToggleVisibility,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _InputField(
+      controller: controller,
+      hintText: 'Confirmar senha',
+      prefixIcon: Icons.lock_outline_rounded,
+      obscureText: obscureText,
+      suffixIcon: obscureText ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+      onSuffixTap: onToggleVisibility,
     );
   }
 }
